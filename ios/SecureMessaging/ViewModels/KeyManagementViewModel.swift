@@ -143,6 +143,7 @@ final class KeyManagementViewModel: ObservableObject {
             attachments: attachmentManager
         )
         chat = model
+        await MessageNotifier.shared.requestAuthorization()
         mqtt.onMessage = { [weak self] topic, data in
             Task { @MainActor in
                 await self?.chat?.ingest(topic: topic, packet: data)

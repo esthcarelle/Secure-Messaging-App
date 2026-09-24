@@ -73,7 +73,7 @@ struct ChatView: View {
     private var recipientField: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                TextField("Username or user id", text: $model.recipientId)
+                TextField("Other person's username", text: $model.recipientQuery)
                     .textInputAutocapitalization(.never)
                     .disableAutocorrection(true)
                     .font(.subheadline)

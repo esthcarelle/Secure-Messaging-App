@@ -16,8 +16,9 @@ struct ChatItem: Identifiable, Equatable {
 
 @MainActor
 final class ChatViewModel: ObservableObject {
-    @Published var recipientId = ""
+    @Published var recipientQuery = ""
     @Published var recipientStatus = ""
+    private var activeRecipientId = ""
     @Published var draft = ""
     @Published var messages: [ChatItem] = []
     @Published var errorMessage: String?
@@ -58,16 +59,15 @@ final class ChatViewModel: ObservableObject {
     }
 
     func openRecipient() async {
-        let entered = recipientId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let entered = recipientQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !entered.isEmpty else {
-            errorMessage = "Enter a username or user id."
+            errorMessage = "Enter the other person's username."
             return
         }
         isSending = true
         defer { isSending = false }
         do {
-            let user = try await resolveRecipient(entered)
-            recipientStatus = "Chat with \(user.username) is ready."
+            _ = try await resolveRecipient(entered)
             reload()
         } catch {
             recipientStatus = ""
@@ -76,16 +76,15 @@ final class ChatViewModel: ObservableObject {
     }
 
     func reload() {
-        let conversation = ConversationID.make(userId, recipientId)
-        guard !recipientId.isEmpty else {
+        guard !activeRecipientId.isEmpty else {
             messages = []
-            recipientStatus = ""
             return
         }
+        let conversation = ConversationID.make(userId, activeRecipientId)
         do {
             let rows = try database.messages(conversationId: conversation)
             messages = rows.map(display)
-            if let contact = try database.contact(userId: recipientId) {
+            if let contact = try database.contact(userId: activeRecipientId) {
                 contactVerified = contact.safetyVerified
                 safetyNumber = crypto.safetyNumber(localPublicKey: publicKey, remotePublicKey: contact.publicKey)
             }
@@ -97,30 +96,30 @@ final class ChatViewModel: ObservableObject {
     func sendText() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        guard !recipientId.isEmpty else {
-            errorMessage = "Enter the recipient user id first."
+        guard !recipientQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            errorMessage = "Enter the other person's username, then tap Open."
             return
         }
-        draft = ""
         await publish(payloadType: .text, plaintext: TextPayload(textContent: text).serialized(), preview: text, attachment: nil)
     }
 
     func sendAttachment(_ attachment: OutboundAttachment) async {
-        guard !recipientId.isEmpty else {
-            errorMessage = "Enter the recipient user id first."
+        guard !recipientQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            errorMessage = "Enter the other person's username, then tap Open."
             return
         }
         isSending = true
         defer { isSending = false }
         do {
-            let recipientKey = try await fetchRecipientKey()
+            let recipient = try await resolveRecipient(recipientQuery)
             let payload = try await attachments.sealAndUpload(
                 attachment,
                 senderSecretKey: secretKey,
-                recipientPublicKey: recipientKey,
+                recipientPublicKey: recipient.publicKey,
                 token: token
             )
             await publish(
+                to: recipient,
                 payloadType: .attachment,
                 plaintext: payload.serialized(),
                 preview: attachment.fileName,
@@ -149,27 +148,32 @@ final class ChatViewModel: ObservableObject {
     }
 
     func markContactVerified() {
-        guard !recipientId.isEmpty, let contact = try? database.contact(userId: recipientId) else { return }
+        guard !activeRecipientId.isEmpty, let contact = try? database.contact(userId: activeRecipientId) else { return }
         try? database.upsertContact(StoredContact(userId: contact.userId, publicKey: contact.publicKey, safetyVerified: true))
         reload()
     }
 
     private func publish(
+        to resolved: DirectoryUser? = nil,
         payloadType: PayloadType,
         plaintext: Data,
         preview: String,
         attachment: (name: String, mime: String, size: Int64, bytes: Data, thumbnail: Data?)?
     ) async {
-        guard !recipientId.isEmpty else {
-            errorMessage = "Enter the recipient user id first."
-            return
-        }
         isSending = true
         defer { isSending = false }
         let messageId = UUID().uuidString
         let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
         do {
-            let recipientKey = try await fetchRecipientKey()
+            let recipient: DirectoryUser
+            if let resolved {
+                recipient = resolved
+            } else {
+                recipient = try await resolveRecipient(recipientQuery)
+            }
+            if payloadType == .text {
+                draft = ""
+            }
             let envelope: MessageEnvelope
             if payloadType == .text {
                 let text = try TextPayload.parse(plaintext).textContent
@@ -177,10 +181,10 @@ final class ChatViewModel: ObservableObject {
                     text,
                     messageId: messageId,
                     senderId: userId,
-                    recipientId: recipientId,
+                    recipientId: recipient.userId,
                     timestamp: timestamp,
                     senderSecretKey: secretKey,
-                    recipientPublicKey: recipientKey
+                    recipientPublicKey: recipient.publicKey
                 )
             } else {
                 let payload = try AttachmentPayload.parse(plaintext)
@@ -188,18 +192,18 @@ final class ChatViewModel: ObservableObject {
                     payload,
                     messageId: messageId,
                     senderId: userId,
-                    recipientId: recipientId,
+                    recipientId: recipient.userId,
                     timestamp: timestamp,
                     senderSecretKey: secretKey,
-                    recipientPublicKey: recipientKey
+                    recipientPublicKey: recipient.publicKey
                 )
             }
             try database.upsertMessage(
                 StoredMessage(
                     messageId: messageId,
-                    conversationId: ConversationID.make(userId, recipientId),
+                    conversationId: ConversationID.make(userId, recipient.userId),
                     senderId: userId,
-                    recipientId: recipientId,
+                    recipientId: recipient.userId,
                     timestampMs: timestamp,
                     payloadType: payloadType.rawValue,
                     body: payloadType == .text ? preview : nil,
@@ -212,7 +216,7 @@ final class ChatViewModel: ObservableObject {
                 )
             )
             reload()
-            try await mqtt.publish(topic: MQTTTopics.incoming(userId: recipientId), payload: envelope.serialized())
+            try await mqtt.publish(topic: MQTTTopics.incoming(userId: recipient.userId), payload: envelope.serialized())
             try database.updateDeliveryStatus(messageId: messageId, status: "sent")
             reload()
         } catch {
@@ -227,8 +231,12 @@ final class ChatViewModel: ObservableObject {
             let peeked = try MessageEnvelope.parse(packet)
             guard peeked.recipientId == userId else { return }
             if try database.messageExists(messageId: peeked.messageId) { return }
-            let senderKey = try await directory.lookupUser(peeked.senderId, token: token).publicKey
-            try database.upsertContact(StoredContact(userId: peeked.senderId, publicKey: senderKey, safetyVerified: false))
+            let sender = try await directory.lookupUser(peeked.senderId, token: token)
+            let senderKey = sender.publicKey
+            try database.upsertContact(StoredContact(userId: sender.userId, publicKey: senderKey, safetyVerified: false))
+            activeRecipientId = sender.userId
+            recipientQuery = sender.username
+            recipientStatus = "Message from \(sender.username)."
             let opened = try crypto.openEnvelope(
                 packet: packet,
                 senderPublicKey: senderKey,
@@ -285,22 +293,43 @@ final class ChatViewModel: ObservableObject {
             let ack = Data(opened.envelope.messageId.utf8)
             try? await mqtt.publish(topic: MQTTTopics.ack(userId: opened.envelope.senderId), payload: ack)
             reload()
+            MessageNotifier.shared.notify(
+                sender: sender.username,
+                body: notificationBody(text: body, attachmentName: name),
+                messageId: opened.envelope.messageId
+            )
         } catch {
             errorMessage = explain(error)
         }
     }
 
-    private func fetchRecipientKey() async throws -> Data {
-        try await resolveRecipient(recipientId).publicKey
-    }
-
     private func resolveRecipient(_ identifier: String) async throws -> DirectoryUser {
-        let user = try await directory.lookupUser(identifier, token: token)
-        recipientId = user.userId
+        let trimmed = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw ChatFlowError.missingRecipient }
+        let user = try await directory.lookupUser(trimmed, token: token)
+        guard user.userId != userId else { throw ChatFlowError.sentToSelf }
+        activeRecipientId = user.userId
+        recipientStatus = "Chat with \(user.username) is ready."
         try database.upsertContact(
             StoredContact(userId: user.userId, publicKey: user.publicKey, safetyVerified: false)
         )
         return user
+    }
+
+    private func notificationBody(text: String?, attachmentName: String?) -> String {
+        if let text {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.count > 120 {
+                return String(trimmed.prefix(117)) + "..."
+            }
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+        if let attachmentName, !attachmentName.isEmpty {
+            return "Sent \(attachmentName)"
+        }
+        return "New message"
     }
 
     private func display(_ row: StoredMessage) -> ChatItem {
@@ -331,8 +360,17 @@ final class ChatViewModel: ObservableObject {
             return "A message could not be decrypted."
         case let DirectoryError.status(code, body):
             return "Server responded \(code). \(body)"
+        case ChatFlowError.missingRecipient:
+            return "Enter the other person's username."
+        case ChatFlowError.sentToSelf:
+            return "That username is this phone. Enter the other account."
         default:
             return error.localizedDescription
         }
     }
+}
+
+private enum ChatFlowError: Error {
+    case missingRecipient
+    case sentToSelf
 }

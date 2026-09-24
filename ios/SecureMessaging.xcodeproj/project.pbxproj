@@ -14,6 +14,7 @@
 		950231298F0EAEED49C2DCA5 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9B13B67A8BF6A9FB4BE7D96 /* ChatViewModel.swift */; };
 		A09F701C61C4DF272253AA6C /* SecureMessagingApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5AC825132F6ECD6A004AD67 /* SecureMessagingApp.swift */; };
 		A49343CCAC4CA74B63D761C0 /* AttachmentViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DBE674AF15724A9938C9052 /* AttachmentViewModel.swift */; };
+		AA9F02B1F309B4E6369FCD03 /* MessageNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADECB8F75DC94F7145578BFC /* MessageNotifier.swift */; };
 		B1E7F069BD997184B32D9592 /* CocoaMQTT in Frameworks */ = {isa = PBXBuildFile; productRef = 4729E58E7DEA476103D554F7 /* CocoaMQTT */; };
 		C0119A8CD62B0FE19ED50BF6 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB3DEF22801E7681A728E217 /* AppConfig.swift */; };
 		C0C79735104005848213D6AD /* AppearanceSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B6C83144A2C3FF17DA017F4 /* AppearanceSettings.swift */; };
@@ -24,13 +25,14 @@
 
 /* Begin PBXFileReference section */
 		0DBE674AF15724A9938C9052 /* AttachmentViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentViewModel.swift; sourceTree = "<group>"; };
-		0DD98EBBD6D4B444F0A47857 /* SecureMessaging.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SecureMessaging.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0DD98EBBD6D4B444F0A47857 /* SecureMessaging.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SecureMessaging.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2083C909329F08ACAF2DA761 /* KeyManagementViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyManagementViewModel.swift; sourceTree = "<group>"; };
 		2D3AE24CC60E3DEB920F4701 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		5C46D2ADE8C8C39BB8263B53 /* QT Exam */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "QT Exam"; path = ..; sourceTree = SOURCE_ROOT; };
 		862AF4FA62DFEE6D2C4C2440 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		8B6C83144A2C3FF17DA017F4 /* AppearanceSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettings.swift; sourceTree = "<group>"; };
 		97A47D7762BD8A4015D277B6 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
+		ADECB8F75DC94F7145578BFC /* MessageNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageNotifier.swift; sourceTree = "<group>"; };
 		B991070E034675B408564101 /* MQTTManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MQTTManager.swift; sourceTree = "<group>"; };
 		C5AC825132F6ECD6A004AD67 /* SecureMessagingApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureMessagingApp.swift; sourceTree = "<group>"; };
 		D9B13B67A8BF6A9FB4BE7D96 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
@@ -63,6 +65,7 @@
 		2853117D1E59F81FE3D30816 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				ADECB8F75DC94F7145578BFC /* MessageNotifier.swift */,
 				B991070E034675B408564101 /* MQTTManager.swift */,
 			);
 			path = Services;
@@ -237,6 +240,7 @@
 				565FCA492FF30A0B8564ED65 /* KeyManagementViewModel.swift in Sources */,
 				D26574908B858A45A9C3C52A /* MQTTManager.swift in Sources */,
 				D9417D59E0CA9D53FB85EE36 /* MessageBubbleView.swift in Sources */,
+				AA9F02B1F309B4E6369FCD03 /* MessageNotifier.swift in Sources */,
 				A09F701C61C4DF272253AA6C /* SecureMessagingApp.swift in Sources */,
 				6B5FDD7239660ECB8B24FD82 /* SettingsView.swift in Sources */,
 			);
@@ -252,7 +256,6 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 6XVA56LVKU;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SecureMessaging/Info.plist;
@@ -275,7 +278,6 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 6XVA56LVKU;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SecureMessaging/Info.plist;

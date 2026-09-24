@@ -5,6 +5,10 @@ struct SecureMessagingApp: App {
     @StateObject private var appearance = AppearanceSettings()
     @StateObject private var session = KeyManagementViewModel()
 
+    init() {
+        MessageNotifier.shared.install()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
