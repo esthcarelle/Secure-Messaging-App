@@ -126,6 +126,14 @@ Each account has a key pair from **libsodium**. The public key is shared. The se
 
 When a conversation was not saved on this phone and is copied from the other phone, the text shows up. Photos in that copied history do not load as well as photos that were saved here when they were sent. New photos still send and open normally.
 
+The other phone has to be open and signed in when you tap **Open**, or the missing messages are not copied.
+
+The server does not keep message text. If both phones lose a chat, it is gone.
+
+A notification appears only while the app is open. There is no Apple push service for a closed app.
+
+The broker can see who is talking, when, and the size of the locked message. It cannot see the text.
+
 ## Demo
 
 [Watch the demo](docs/demo.mov)
