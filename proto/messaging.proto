@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package securemessaging;
+
+// Binary envelope published to users/{recipientId}/messages.
+// payload_bytes is crypto_box_easy ciphertext of a TextPayload or AttachmentPayload.
+// hash_signature is the SHA-256 of those plaintext payload bytes (not an Ed25519 signature).
+// The libsodium MAC inside payload_bytes authenticates the ciphertext; the hash detects
+// a payload swap after a successful box open.
+
+enum PayloadType {
+  PAYLOAD_TYPE_UNSPECIFIED = 0;
+  PAYLOAD_TYPE_TEXT = 1;
+  PAYLOAD_TYPE_ATTACHMENT = 2;
+}
+
+message MessageEnvelope {
+  string message_id = 1;
+  string sender_id = 2;
+  string recipient_id = 3;
+  int64 timestamp = 4;
+  PayloadType payload_type = 5;
+  bytes payload_bytes = 6;
+  bytes nonce = 7;
+  bytes hash_signature = 8;
+}
+
+message TextPayload {
+  string text_content = 1;
+}
+
+message AttachmentPayload {
+  // s3://<bucket>/<objectKey>. The object key is unguessable. Clients exchange it
+  // for a short-lived pre-signed GET; the URL stored here does not grant access by itself.
+  string s3_file_url = 1;
+  // crypto_box_easy ciphertext of the 32-byte secretbox key.
+  bytes encrypted_s3_key = 2;
+  // 24-byte crypto_box nonce for encrypted_s3_key.
+  bytes s3_key_nonce = 3;
+  string mime_type = 4;
+  uint64 file_size = 5;
+  string file_name = 6;
+  // Thumbnail wire format: 24-byte secretbox nonce || crypto_secretbox_easy ciphertext.
+  // The file uploaded to object storage uses the same layout with its own nonce.
+  bytes encrypted_thumbnail_data = 7;
+}

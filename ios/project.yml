@@ -1,0 +1,35 @@
+name: SecureMessaging
+options:
+  bundleIdPrefix: com.securemessaging
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+packages:
+  SecureMessagingKit:
+    path: ..
+  CocoaMQTT:
+    url: https://github.com/emqx/CocoaMQTT.git
+    from: 2.1.0
+targets:
+  SecureMessaging:
+    type: application
+    platform: iOS
+    sources:
+      - path: SecureMessaging
+    dependencies:
+      - package: SecureMessagingKit
+        product: SecureMessagingKit
+      - package: CocoaMQTT
+        product: CocoaMQTT
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.securemessaging.app
+        MARKETING_VERSION: 1.0.0
+        CURRENT_PROJECT_VERSION: 1
+        SWIFT_VERSION: 5.0
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: SecureMessaging/Info.plist
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_PREVIEWS: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
