@@ -19,6 +19,20 @@ final class ProtobufTests: XCTestCase {
         XCTAssertEqual(try MessageEnvelope.parse(envelope.serialized()), envelope)
     }
 
+    func testHistoryRecordRoundTrip() throws {
+        let record = HistoryRecord(
+            messageId: "m1",
+            senderId: "alice",
+            recipientId: "esther",
+            timestampMs: 42,
+            payloadType: PayloadType.text.rawValue,
+            body: "hello",
+            attachmentName: "",
+            attachmentMime: ""
+        )
+        XCTAssertEqual(try HistoryRecord.parse(record.serialized()), record)
+    }
+
     func testAttachmentRoundTripIncludingEmptyThumbnail() throws {
         let payload = AttachmentPayload(
             s3FileUrl: "s3://ciphertext/ciphertext/6f1b1c3e-9a0d-4e1a-9c2b-6a0d9e1c3b11",

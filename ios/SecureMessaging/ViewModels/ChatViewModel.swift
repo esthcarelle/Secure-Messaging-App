@@ -67,8 +67,9 @@ final class ChatViewModel: ObservableObject {
         isSending = true
         defer { isSending = false }
         do {
-            _ = try await resolveRecipient(entered)
+            let user = try await resolveRecipient(entered)
             reload()
+            await requestHistory(from: user)
         } catch {
             recipientStatus = ""
             errorMessage = explain(error)
@@ -143,7 +144,12 @@ final class ChatViewModel: ObservableObject {
             reload()
             return
         }
-        guard topic == MQTTTopics.incoming(userId: userId) else { return }
+        guard topic == MQTTTopics.incoming(userId: userId) else {
+            if topic == MQTTTopics.history(userId: userId) {
+                await receiveHistory(packet)
+            }
+            return
+        }
         await receive(packet)
     }
 
@@ -300,6 +306,101 @@ final class ChatViewModel: ObservableObject {
             )
         } catch {
             errorMessage = explain(error)
+        }
+    }
+
+    private func requestHistory(from peer: DirectoryUser) async {
+        do {
+            let envelope = try crypto.seal(
+                Data(),
+                payloadType: .historyRequest,
+                messageId: UUID().uuidString,
+                senderId: userId,
+                recipientId: peer.userId,
+                timestamp: Int64(Date().timeIntervalSince1970 * 1000),
+                senderSecretKey: secretKey,
+                recipientPublicKey: peer.publicKey
+            )
+            try await mqtt.publish(topic: MQTTTopics.history(userId: peer.userId), payload: envelope.serialized())
+        } catch {
+            return
+        }
+    }
+
+    private func receiveHistory(_ packet: Data) async {
+        do {
+            let peeked = try MessageEnvelope.parse(packet)
+            guard peeked.recipientId == userId else { return }
+            let peer = try await directory.lookupUser(peeked.senderId, token: token)
+            let opened = try crypto.openEnvelope(
+                packet: packet,
+                senderPublicKey: peer.publicKey,
+                recipientSecretKey: secretKey
+            )
+            if opened.envelope.payloadType == .historyRequest {
+                await sendHistory(to: peer)
+            } else if opened.envelope.payloadType == .historyRecord {
+                try storeSharedHistory(opened.plaintext, from: peer.userId)
+            }
+        } catch {
+            return
+        }
+    }
+
+    private func sendHistory(to peer: DirectoryUser) async {
+        let conversation = ConversationID.make(userId, peer.userId)
+        guard let rows = try? database.messages(conversationId: conversation) else { return }
+        for row in rows {
+            let record = HistoryRecord(
+                messageId: row.messageId,
+                senderId: row.senderId,
+                recipientId: row.recipientId,
+                timestampMs: row.timestampMs,
+                payloadType: row.payloadType,
+                body: row.body ?? "",
+                attachmentName: row.attachmentName ?? "",
+                attachmentMime: row.attachmentMime ?? ""
+            )
+            guard let envelope = try? crypto.seal(
+                record.serialized(),
+                payloadType: .historyRecord,
+                messageId: UUID().uuidString,
+                senderId: userId,
+                recipientId: peer.userId,
+                timestamp: row.timestampMs,
+                senderSecretKey: secretKey,
+                recipientPublicKey: peer.publicKey
+            ) else { continue }
+            try? await mqtt.publish(topic: MQTTTopics.history(userId: peer.userId), payload: envelope.serialized())
+        }
+    }
+
+    private func storeSharedHistory(_ plaintext: Data, from peerId: String) throws {
+        let record = try HistoryRecord.parse(plaintext)
+        guard !record.messageId.isEmpty else { return }
+        guard record.senderId == userId || record.recipientId == userId else { return }
+        guard record.senderId == peerId || record.recipientId == peerId else { return }
+        if try database.messageExists(messageId: record.messageId) { return }
+        let kind = record.payloadType == PayloadType.attachment.rawValue ? PayloadType.attachment.rawValue : PayloadType.text.rawValue
+        try database.upsertMessage(
+            StoredMessage(
+                messageId: record.messageId,
+                conversationId: ConversationID.make(record.senderId, record.recipientId),
+                senderId: record.senderId,
+                recipientId: record.recipientId,
+                timestampMs: record.timestampMs,
+                payloadType: kind,
+                body: record.body.isEmpty ? nil : record.body,
+                attachmentName: record.attachmentName.isEmpty ? nil : record.attachmentName,
+                attachmentMime: record.attachmentMime.isEmpty ? nil : record.attachmentMime,
+                attachmentSize: nil,
+                attachmentBytes: nil,
+                thumbnailBytes: nil,
+                deliveryStatus: "delivered"
+            )
+        )
+        if activeRecipientId == peerId {
+            reload()
         }
     }
 

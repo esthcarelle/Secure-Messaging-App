@@ -4,6 +4,8 @@ public enum PayloadType: Int, Sendable, Equatable {
     case unspecified = 0
     case text = 1
     case attachment = 2
+    case historyRequest = 3
+    case historyRecord = 4
 }
 
 public struct MessageEnvelope: Equatable, Sendable {
@@ -215,6 +217,92 @@ public struct AttachmentPayload: Equatable, Sendable {
         let path = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard path.hasPrefix("ciphertext/") else { return nil }
         return path
+    }
+}
+
+public struct HistoryRecord: Equatable, Sendable {
+    public var messageId: String
+    public var senderId: String
+    public var recipientId: String
+    public var timestampMs: Int64
+    public var payloadType: Int
+    public var body: String
+    public var attachmentName: String
+    public var attachmentMime: String
+
+    public init(
+        messageId: String,
+        senderId: String,
+        recipientId: String,
+        timestampMs: Int64,
+        payloadType: Int,
+        body: String,
+        attachmentName: String,
+        attachmentMime: String
+    ) {
+        self.messageId = messageId
+        self.senderId = senderId
+        self.recipientId = recipientId
+        self.timestampMs = timestampMs
+        self.payloadType = payloadType
+        self.body = body
+        self.attachmentName = attachmentName
+        self.attachmentMime = attachmentMime
+    }
+
+    public func serialized() -> Data {
+        var sink = ProtoSink()
+        sink.writeString(1, messageId)
+        sink.writeString(2, senderId)
+        sink.writeString(3, recipientId)
+        sink.writeInt64(4, timestampMs)
+        sink.writeString(5, body)
+        sink.writeString(6, attachmentName)
+        sink.writeString(7, attachmentMime)
+        if payloadType != 0 {
+            sink.writeVarintField(8, UInt64(payloadType))
+        }
+        return sink.data
+    }
+
+    public static func parse(_ data: Data) throws -> HistoryRecord {
+        try ProtoLimits.check(data)
+        var reader = ProtoReader(data: data)
+        var messageId = ""
+        var senderId = ""
+        var recipientId = ""
+        var timestampMs: Int64 = 0
+        var body = ""
+        var attachmentName = ""
+        var attachmentMime = ""
+        var payloadType = 0
+        while !reader.isAtEnd {
+            let key = try reader.readVarint()
+            let field = Int(key >> 3)
+            let wire = Int(key & 0x7)
+            guard field > 0 else { throw ProtobufError.invalidField }
+            switch (field, wire) {
+            case (1, 2): messageId = try reader.readString()
+            case (2, 2): senderId = try reader.readString()
+            case (3, 2): recipientId = try reader.readString()
+            case (4, 0): timestampMs = Int64(bitPattern: try reader.readVarint())
+            case (5, 2): body = try reader.readString()
+            case (6, 2): attachmentName = try reader.readString()
+            case (7, 2): attachmentMime = try reader.readString()
+            case (8, 0): payloadType = Int(try reader.readVarint())
+            default: try reader.skip(wireType: wire)
+            }
+        }
+        return HistoryRecord(
+            messageId: messageId,
+            senderId: senderId,
+            recipientId: recipientId,
+            timestampMs: timestampMs,
+            payloadType: payloadType,
+            body: body,
+            attachmentName: attachmentName,
+            attachmentMime: attachmentMime
+        )
     }
 }
 

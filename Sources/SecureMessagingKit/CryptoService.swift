@@ -254,6 +254,28 @@ public final class CryptoService: @unchecked Sendable {
 
     // MARK: - Pipeline
 
+    public func seal(
+        _ plaintext: Data,
+        payloadType: PayloadType,
+        messageId: String,
+        senderId: String,
+        recipientId: String,
+        timestamp: Int64,
+        senderSecretKey: Data,
+        recipientPublicKey: Data
+    ) throws -> MessageEnvelope {
+        try sealPacked(
+            plaintext,
+            payloadType: payloadType,
+            messageId: messageId,
+            senderId: senderId,
+            recipientId: recipientId,
+            timestamp: timestamp,
+            senderSecretKey: senderSecretKey,
+            recipientPublicKey: recipientPublicKey
+        )
+    }
+
     private func sealPacked(
         _ plaintext: Data,
         payloadType: PayloadType,
@@ -363,6 +385,10 @@ public enum MQTTTopics {
 
     public static func ack(userId: String) -> String {
         "users/\(userId)/ack"
+    }
+
+    public static func history(userId: String) -> String {
+        "users/\(userId)/history"
     }
 }
 

@@ -16,10 +16,12 @@ export function validateObjectKey(objectKey) {
 }
 
 export function createS3Client(env = process.env) {
+  const endpoint = env.S3_ENDPOINT || "";
+  const localStorage = /localhost|127\.0\.0\.1/.test(endpoint);
   return new S3Client({
     region: env.S3_REGION || "auto",
-    endpoint: env.S3_ENDPOINT || undefined,
-    forcePathStyle: true,
+    endpoint: endpoint || undefined,
+    forcePathStyle: localStorage,
     credentials: {
       accessKeyId: env.S3_ACCESS_KEY || "",
       secretAccessKey: env.S3_SECRET_KEY || "",

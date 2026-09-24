@@ -34,6 +34,7 @@ final class MQTTManager {
             if ack == .accept {
                 mqtt.subscribe(MQTTTopics.incoming(userId: userId), qos: .qos1)
                 mqtt.subscribe(MQTTTopics.ack(userId: userId), qos: .qos1)
+                mqtt.subscribe(MQTTTopics.history(userId: userId), qos: .qos1)
                 self.finishConnect(.success(()))
             } else {
                 self.finishConnect(.failure(MQTTError.rejected))
