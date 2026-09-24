@@ -44,6 +44,7 @@ final class KeyManagementViewModel: ObservableObject {
         token = nil
         userId = nil
         chat = nil
+        password = ""
     }
 
     func restore() async {
@@ -72,11 +73,9 @@ final class KeyManagementViewModel: ObservableObject {
         errorMessage = nil
         do {
             if isRegistration {
-                if try keychain.data(account: Account.secret) != nil {
-                    throw SessionError.identityAlreadyExists
-                }
                 let identity = try crypto.generateIdentity()
                 let session = try await directory.register(username: trimmedName, password: password, publicKey: identity.publicKey)
+                clearLocalHistory()
                 try persistIdentity(identity, session: session)
                 try await startSession(
                     userId: session.userId,
@@ -87,22 +86,32 @@ final class KeyManagementViewModel: ObservableObject {
                 )
             } else {
                 let session = try await directory.login(username: trimmedName, password: password)
-                guard let secret = try keychain.data(account: Account.secret),
-                      let storedPublic = try keychain.data(account: Account.publicKey),
-                      let storedUser = try keychain.string(account: Account.userId),
-                      storedUser == session.userId
-                else { throw SessionError.missingLocalIdentity }
-                try keychain.setString(session.token, account: Account.token)
-                try await startSession(
-                    userId: session.userId,
-                    username: session.username,
-                    token: session.token,
-                    secret: secret,
-                    publicKey: storedPublic
-                )
+                if let secret = try keychain.data(account: Account.secret),
+                   let storedPublic = try keychain.data(account: Account.publicKey),
+                   let storedUser = try keychain.string(account: Account.userId),
+                   storedUser == session.userId {
+                    try keychain.setString(session.token, account: Account.token)
+                    try await startSession(
+                        userId: session.userId,
+                        username: session.username,
+                        token: session.token,
+                        secret: secret,
+                        publicKey: storedPublic
+                    )
+                } else {
+                    let identity = try crypto.generateIdentity()
+                    try await directory.uploadPublicKey(identity.publicKey, token: session.token)
+                    clearLocalHistory()
+                    try persistIdentity(identity, session: session)
+                    try await startSession(
+                        userId: session.userId,
+                        username: session.username,
+                        token: session.token,
+                        secret: identity.secretKey,
+                        publicKey: identity.publicKey
+                    )
+                }
             }
-        } catch let error as SessionError {
-            errorMessage = error.message
         } catch let DirectoryError.status(code, body) {
             errorMessage = "Server responded \(code). \(body)"
         } catch {
@@ -158,6 +167,18 @@ final class KeyManagementViewModel: ObservableObject {
         self.username = username
     }
 
+    private func clearLocalHistory() {
+        database = nil
+        if let base = try? FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: false
+        ) {
+            try? FileManager.default.removeItem(at: base.appendingPathComponent("SecureMessaging", isDirectory: true))
+        }
+    }
+
     private func openDatabase() throws -> DatabaseService {
         if let database { return database }
         let base = try FileManager.default.url(
@@ -179,18 +200,4 @@ private enum Account {
     static let userId = "session.userId"
     static let username = "session.username"
     static let token = "session.token"
-}
-
-private enum SessionError: Error {
-    case identityAlreadyExists
-    case missingLocalIdentity
-
-    var message: String {
-        switch self {
-        case .identityAlreadyExists:
-            return "This device already holds an identity. Private keys stay on the device that created them."
-        case .missingLocalIdentity:
-            return "No private key for this account is stored on this device, so existing messages cannot be opened."
-        }
-    }
 }
