@@ -129,7 +129,7 @@ When a conversation was not saved on this phone and is copied from the other pho
 ## Demo
 
 [Watch the demo](docs/demo.mov)
-https://drive.google.com/file/d/1trTFlT6tTxHhMXS2W32OPBlSKJzrXudb/view?usp=sharing
+https://drive.google.com/file/d/1r9_AeOxrr18AfwV3Hf4PbPU2-yZH7_KI/view?usp=sharing
 
 ## Where things live
 
