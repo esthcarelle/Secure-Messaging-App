@@ -1,39 +1,33 @@
 # Secure Messaging
 
-End-to-end encrypted text and photo messaging for iOS. The phone encrypts every payload before it leaves the device. The backend stores accounts, Curve25519 public keys, and opaque media blobs. It never receives plaintext messages or file keys.
+A private chat app for iPhone. Messages and photos are locked on the phone before they are sent. The server keeps accounts and public keys. It cannot read the chats.
 
-## Required dependencies and setup
+## What you need
 
-Install these on the Mac that will run the stack and the simulator:
+Install these on your Mac:
 
-| Tool | Used for |
-| --- | --- |
-| Docker Desktop | Postgres, MinIO, and EMQX |
-| Node.js 20 or newer | The directory API (`node --env-file` needs 20+) |
-| Xcode 15 or newer | The iOS app, deployment target iOS 15 |
-| XcodeGen (`brew install xcodegen`) | Generates `ios/SecureMessaging.xcodeproj` |
-| Swift 6 toolchain | Comes with Xcode; also runs `swift test` |
 
-Swift Package Manager fetches the app libraries. You do not install them by hand.
+| Tool                | Why                                                             |
+| ------------------- | --------------------------------------------------------------- |
+| Docker Desktop      | Runs the database, file storage, and message broker             |
+| Node.js 20 or newer | Runs the small API                                              |
+| Xcode 15 or newer   | Builds the iPhone app                                           |
+| XcodeGen            | Creates the Xcode project. Install with `brew install xcodegen` |
 
-| Package | Role |
-| --- | --- |
-| [swift-sodium](https://github.com/jedisct1/swift-sodium) 0.11+ | libsodium `crypto_box` and `crypto_secretbox` |
-| [SQLCipher.swift](https://github.com/sqlcipher/SQLCipher.swift) 4.10+ | Encrypted local message database |
-| [CocoaMQTT](https://github.com/emqx/CocoaMQTT) 2.1+ | MQTT client |
 
-The API dependencies are in `backend/package.json`: Express, `pg`, `jsonwebtoken`, and the AWS S3 client used against MinIO.
+Xcode also includes Swift. The app downloads its own libraries when you build:
 
-`ios/SecureMessaging/Config/AppConfig.swift` points the app at the host machine:
+- **libsodium** (swift-sodium) locks and unlocks messages and photos
+- **SQLCipher** stores chat history in an encrypted database on the phone
+- **CocoaMQTT** delivers messages between phones
 
-- API: `http://127.0.0.1:8080`
-- MQTT: `127.0.0.1:1883`, TLS off
+The API uses Express, Postgres, and a file store (MinIO, which works like S3). Those install with `npm install`.
 
-That address works from the iOS Simulator. A physical iPhone would need the Mac's LAN address instead.
+The app talks to your Mac at `127.0.0.1`. Use the **iOS Simulator** in Xcode so that address works.
 
-## Build and run locally
+## Run it on your Mac
 
-From the repository root:
+Open Terminal in this folder and start the services:
 
 ```bash
 docker compose up -d
@@ -43,28 +37,24 @@ npm install
 npm start
 ```
 
-On startup the API applies `backend/sql/schema.sql` and listens on port 8080. Check it with:
+The API starts on port 8080 and creates the database tables for you. Check it:
 
 ```bash
 curl http://127.0.0.1:8080/health
 ```
 
-A healthy process returns `{"ok":true}`.
+You should see `{"ok":true}`.
 
-Postgres is published on host port **5433** (`postgres://messaging:messaging@localhost:5433/messaging`) so it does not collide with another Postgres already bound to 5432. If port 8080 is already taken, stop the old process before `npm start`.
 
-Local services:
+| Service               | Address                                        | Login                                                                          |
+| --------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------ |
+| API                   | [http://127.0.0.1:8080](http://127.0.0.1:8080) | —                                                                              |
+| Database              | localhost:5433                                 | user `messaging`, password `messaging`                                         |
+| File storage (MinIO)  | [http://127.0.0.1:9000](http://127.0.0.1:9000) | user `minio`, password `minio12345` (console on port 9001)                     |
+| Message broker (EMQX) | 127.0.0.1:1883                                 | dashboard [http://127.0.0.1:18083](http://127.0.0.1:18083), `admin` / `public` |
 
-| Service | Address | Notes |
-| --- | --- | --- |
-| API | http://127.0.0.1:8080 | JWT directory and pre-signed media URLs |
-| Postgres | localhost:5433 | User, password, and database are all `messaging` |
-| MinIO | http://127.0.0.1:9000 | Console on port 9001, user `minio`, password `minio12345` |
-| EMQX | 127.0.0.1:1883 | Dashboard on port 18083, `admin` / `public` |
 
-The MinIO init container creates the `ciphertext` bucket. EMQX on this compose file accepts connections so the simulators can subscribe. The app still sends the user id and JWT as the MQTT username and password. The local broker does not verify that token.
-
-Generate the Xcode project and open it:
+Then open the app:
 
 ```bash
 cd ios
@@ -72,152 +62,125 @@ xcodegen generate
 open SecureMessaging.xcodeproj
 ```
 
-In Xcode, choose an iPhone simulator and press Run. To try two people, run the app on a second simulator as well (change the run destination and press Run again; the first simulator keeps the installed app). Create a different account on each one. Username must be at least 3 characters and the password at least 8.
+In Xcode, pick an iPhone simulator and press Run.
 
-On each phone:
+To chat between two people, run the app on a second simulator too. Change the simulator in Xcode and press Run again. The first simulator keeps the app.
 
-1. Allow notifications when iOS asks.
-2. Type the other account's username and tap **Open**. The status line should say the chat is ready.
-3. Send a message. It is published to `users/{their-user-id}/messages`.
-4. The other simulator shows the message and a banner while that app is still running.
+1. Create a different account on each simulator. Username at least 3 characters, password at least 8.
+2. Allow notifications when the phone asks.
+3. Type the other person’s username and tap **Open**.
+4. Send a message. It shows up on the other simulator, with a notification banner.
 
-Compare the safety number in Settings on both phones before tapping verify.
+Open Settings on both phones to compare the safety number, then mark the contact as verified.
 
-Run the automated tests from the repository root:
+To run the tests:
 
 ```bash
 swift test
 cd backend && npm test
 ```
 
-`swift test` covers protobuf round-trips, text and attachment encryption, tampered ciphertext, tampered hashes, SQLCipher open with the wrong key, and a full upload/download through a fake object store.
 
-## Architecture
+
+## How it is built
+
+The phone does the private work. The Mac only helps the two phones find each other and pass locked data.
 
 ```text
-iOS app                         Mac (local)
-┌─────────────────────┐         ┌──────────────────────────┐
-│ SwiftUI + MVVM      │         │ Express API :8080        │
-│ SecureMessagingKit  │─ REST ─▶│ Postgres (accounts, keys)│
-│ SQLCipher + Keychain│         │ MinIO (opaque blobs)     │
-│ CocoaMQTT           │─ MQTT ─▶│ EMQX :1883               │
-└─────────────────────┘         └──────────────────────────┘
+iPhone                         Your Mac
+┌─────────────────────┐        ┌─────────────────────────┐
+│ Chat screen         │        │ API (accounts and keys) │
+│ Lock and unlock     │─ REST ▶│ Database                │
+│ Saved chats         │        │ File storage            │
+│ Live messages       │─ MQTT ▶│ Message broker          │
+└─────────────────────┘        └─────────────────────────┘
 ```
 
-### iOS
 
-The app is SwiftUI with an MVVM split.
 
-- `KeyManagementViewModel` registers or logs in, keeps the identity in the Keychain, opens SQLCipher, and connects MQTT.
-- `ChatViewModel` resolves a username to a user id, seals or opens envelopes, and reloads the open conversation.
-- `AttachmentViewModel` picks a photo, compresses it, and hands the bytes to `AttachmentManager`.
-- `MQTTManager` subscribes to `users/{userId}/messages` and `users/{userId}/ack` at QoS 1 with `cleanSession = false`. The MQTT client id is the user id.
-- `MessageNotifier` posts a local notification after a message has been decrypted on the device.
+### iPhone app
 
-`SecureMessagingKit` is the shared library: protobuf codec, `CryptoService`, `DatabaseService`, Keychain, and attachment upload/download. The UI never talks to Postgres or MinIO directly.
+The screens are SwiftUI. Each screen has a view model that holds the logic.
 
-Decrypted history stays in SQLCipher. The 256-bit database key is created on the device and stored in the Keychain (`com.securemessaging.keystore`). The server has no message table.
+- Sign-up and login create a key pair and save the secret key in the iPhone Keychain.
+- The chat screen looks up the other person by username, locks the message for them, and sends it.
+- Photos are shrunk on the phone, locked, then uploaded.
+- Old messages are saved in an encrypted database on the phone (SQLCipher). The key for that database is also in the Keychain.
+- When a new message arrives, the app unlocks it, shows the chat, and posts a notification.
+
+
 
 ### Backend
 
-The API is a small Node.js Express service.
+A small Node.js API. It does not store messages.
 
-| Route | Purpose |
-| --- | --- |
-| `GET /health` | Liveness |
-| `POST /v1/auth/register` | Create the account, store the 32-byte public key, return a JWT |
-| `POST /v1/auth/login` | Check the scrypt password hash and return a JWT |
-| `PUT /v1/users/me/public-key` | Replace this account's public key |
-| `GET /v1/users/:id/public-key` | Look up a public key by username or user id |
-| `POST /v1/media/upload-url` | Pre-signed PUT for `ciphertext/{uuid}` |
-| `POST /v1/media/download-url` | Short-lived pre-signed GET for an object key the client already has |
 
-Passwords are hashed with scrypt. Private keys are rejected and are not stored. JSON bodies are capped at 32 KB so file bytes cannot be posted to the API.
+| Address                        | What it does                                                 |
+| ------------------------------ | ------------------------------------------------------------ |
+| `GET /health`                  | Says the API is up                                           |
+| `POST /v1/auth/register`       | Creates an account and saves the public key                  |
+| `POST /v1/auth/login`          | Checks the password and returns a login token                |
+| `GET /v1/users/:id/public-key` | Finds someone by username or id and returns their public key |
+| `POST /v1/media/upload-url`    | Gives the phone a short-lived link to upload a locked photo  |
+| `POST /v1/media/download-url`  | Gives the phone a short-lived link to download that photo    |
 
-There is no chat log on the server. Live delivery is MQTT. The sender publishes a `MessageEnvelope` to the recipient's topic. The recipient publishes the message id on `users/{senderId}/ack` after a successful open. A "sent" state means EMQX returned PUBACK. "Delivered" means the other phone sent that ack.
 
-## Encryption
+Passwords are stored as a scrypt hash. The server only keeps the public key. The secret key stays on the phone.
 
-Text and the attachment descriptor use libsodium `crypto_box_easy`: X25519 key agreement plus XSalsa20-Poly1305. Each seal uses a fresh 24-byte nonce and the recipient's long-term Curve25519 public key. The sender's secret key stays in the Keychain.
+Live chat goes through MQTT. Each person has a topic, `users/{their-id}/messages`. After the other phone unlocks a message, it sends a small receipt so the sender can show **Delivered**.
 
-Before encryption, CryptoKit SHA-256 hashes the plaintext payload. That digest is stored in the envelope field `hash_signature`. On open, `crypto_box_open_easy` checks the libsodium MAC. The client then hashes the recovered plaintext again and compares it with `hash_signature`. A mismatch is discarded, so a payload swapped after a valid box still fails.
+## How encryption works
 
-The wire format is protobuf (`proto/messaging.proto`), encoded by a small handwritten codec in `Sources/SecureMessagingKit/Protobuf.swift`. The envelope carries `message_id`, `sender_id`, `recipient_id`, `timestamp`, and `payload_type` in the clear, plus `payload_bytes`, `nonce`, and `hash_signature`.
+Each account has a key pair from **libsodium**. The public key is safe to share. The secret key stays in the Keychain.
 
-Photos:
+**Text.** The app locks the text with libsodium `crypto_box`. That uses the other person’s public key, so only their secret key can open it. A new random nonce is used every time.
 
-1. The image is compressed on the device.
-2. The file is encrypted with `crypto_secretbox_easy` under a random 256-bit key.
-3. The upload is `24-byte nonce || ciphertext`. MinIO stores that blob and cannot read the image.
-4. The file key is wrapped with `crypto_box_easy` for the recipient and placed in `AttachmentPayload`, along with `s3://bucket/ciphertext/{id}`.
-5. The thumbnail uses the same secretbox layout under the file key.
-6. `AttachmentPayload` is sealed inside a `MessageEnvelope` with the same box and SHA-256 steps as text.
+**Hash check.** Before locking, the app hashes the message with **SHA-256** (CryptoKit). The hash is sent in the field `hash_signature`. When the other phone opens the message, libsodium checks the lock. The phone then hashes the opened text again and compares it with `hash_signature`. If the hash does not match, the message is thrown away.
 
-`s3_file_url` is an object key, not a long-lived link. The recipient exchanges it for a short-lived pre-signed GET. Those URLs are not written into message history.
+**Photos.** The picture is locked with libsodium `crypto_secretbox` and a one-time file key. The locked file is uploaded to MinIO. The file key is then locked with `crypto_box` for the recipient and sent inside the chat message, along with a small locked thumbnail. The server stores the file and cannot open it.
 
-Identity is one key pair per install. Logging in on another device creates a new pair. The server never had the old secret, so it cannot restore the old history.
+**On the wire.** Messages use a small protobuf layout (`proto/messaging.proto`). The chat text itself is inside the locked bytes.
 
-This uses long-term identity keys. A later compromise of a secret key can decrypt messages that were sealed to that key. There is no Signal-style Double Ratchet and no post-compromise forward secrecy.
+**On the phone.** Opened chats sit in SQLCipher. A 256-bit key in the Keychain opens that database.
 
-The broker and the directory can see account ids, timestamps, ciphertext sizes, and object-key requests. They cannot see message text, filenames inside the encrypted payload, media bytes, or symmetric keys.
+## What the app can do
 
-## Implemented features
+- Create an account and log in
+- Send locked text messages
+- Send locked photos
+- Show sent and delivered
+- Keep chat history on the phone
+- Open the right chat when a message arrives
+- Show a notification with the sender’s name and a short preview
+- Show a safety number so two people can confirm they have the right keys
+- Switch between system, light, and dark appearance
 
-- Register and log in with a username and password.
-- Curve25519 identity keys generated on device and stored in the Keychain.
-- Public-key directory lookup by username or user id.
-- End-to-end encrypted text, published over MQTT QoS 1.
-- End-to-end encrypted photos, including an encrypted thumbnail, through pre-signed MinIO URLs.
-- Delivery states: pending, sent (broker PUBACK), delivered (recipient ack), and failed.
-- Local history in SQLCipher, reloaded when a conversation is opened.
-- Incoming messages open that sender's chat automatically.
-- The app refuses to publish a message to the account that is currently signed in.
-- Safety number for the open contact, with an explicit verify action in Settings.
-- Appearance override: System Default, Always Light, or Always Dark. Bubble colors come from the asset catalog.
-- Local notification with the sender's username and a short decrypted preview, including while the app is in the foreground.
 
-## Design choices
 
-- The SHA-256 check sits beside the libsodium MAC, so authentication of the box and detection of a swapped plaintext are separate steps.
-- Media never passes through the API. The phone uploads ciphertext with a pre-signed URL, and the API only mints that URL.
-- The chat log lives only in SQLCipher. The database key is random, 256 bits, and kept in the Keychain.
-- The recipient field accepts a username. The client resolves it to a user id and publishes to that id's MQTT topic.
-- An incoming packet both updates the open conversation and raises a local notification after decryption, so the banner shows content the server never saw.
-- The protobuf codec is handwritten against `messaging.proto`, which keeps the envelope free of a generated SwiftProtobuf dependency.
-- Light and dark bubbles are asset-catalog colors, and the in-app appearance setting applies `preferredColorScheme` without fighting the system semantic colors.
+## Extra touches
 
-## Known limitations
+- Two checks on every message: the libsodium lock, then the SHA-256 hash
+- Photos go straight to file storage. The API only hands out a temporary upload link
+- Chat history never goes to the server. It stays in the encrypted database on the phone
+- You can type a username. The app finds the right person and sends the message to them
+- A new message opens that chat and shows a notification after the phone has unlocked it
+- Light and dark chat bubbles follow the appearance setting
 
-- Long-term `crypto_box` keys do not give forward secrecy after a secret key is compromised.
-- Sender id, recipient id, timestamp, and payload type are visible in the envelope. The broker also sees topic names and payload sizes.
-- One install, one identity. A second install of the same username does not recover the previous secret key or its SQLCipher history.
-- `AppConfig` uses `127.0.0.1`. The iOS Simulator can reach the Mac. A physical iPhone cannot, until those URLs are changed to a reachable host.
-- Local HTTP and MQTT are not using TLS.
-- The local EMQX broker accepts the MQTT connection without checking the JWT.
-- Notifications are local. They fire when this app process receives and decrypts the MQTT packet. A fully closed app does not get an Apple push notification, because MQTT is not a push service and this project does not talk to APNs.
-- iOS suspends a background app and drops the socket. EMQX can queue for a persistent session, but a suspended app will not show a banner until it is running again and reconnects.
-- "Sent" is the broker's PUBACK. The other phone still has to be connected, subscribed to its own user-id topic, and able to decrypt.
 
-## Screenshots
 
-Place images in `docs/screenshots/` using these names.
+## Demo
 
-![Login and registration](docs/screenshots/login.png)
+[Watch the demo](docs/demo.mov)
 
-![Open chat and an encrypted text thread](docs/screenshots/chat.png)
+## Where things live
 
-![Photo attachment](docs/screenshots/attachment.png)
 
-![Settings: appearance and safety number](docs/screenshots/settings.png)
+| Part                               | Folder                       |
+| ---------------------------------- | ---------------------------- |
+| Message format                     | `proto/messaging.proto`      |
+| Locking, database, and photos      | `Sources/SecureMessagingKit` |
+| iPhone screens                     | `ios/SecureMessaging`        |
+| API                                | `backend`                    |
+| Database, file storage, and broker | `docker-compose.yml`         |
 
-![Message notification](docs/screenshots/notification.png)
 
-## Layout
-
-| Piece | Where |
-| --- | --- |
-| Protobuf schema | `proto/messaging.proto` |
-| Swift codec, libsodium, CryptoKit, SQLCipher, attachments | `Sources/SecureMessagingKit` |
-| SwiftUI chat, theme, MQTT, notifications | `ios/SecureMessaging` |
-| Public-key directory and pre-signed media URLs | `backend` |
-| Local Postgres, MinIO, and EMQX | `docker-compose.yml` |
